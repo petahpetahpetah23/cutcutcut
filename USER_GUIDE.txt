@@ -1,0 +1,372 @@
+CARD CUTTER 1.0 USER GUIDE
+==========================
+
+WHAT THIS APP DOES
+------------------
+Card Cutter finds one trading card or graded slab in each photograph, keeps the
+outside margin you choose, optionally straightens perspective, and optionally
+rotates the result so detected text reads normally. All processing happens on
+your computer. Original files are never changed.
+
+Supported systems:
+  * Apple Silicon Mac (M-series), macOS 14 or newer
+  * 64-bit x64 Windows 10 or Windows 11
+  * Python 3.14 (the virtual environment is separate on every computer)
+
+Supported inputs: JPG, JPEG, PNG, and HEIC. A supported image whose filename
+has no extension is recognized from its file signature. JPG/PNG keep their
+format; HEIC outputs become high-quality JPG files. The app handles one fully
+visible card or slab per image.
+
+
+INSTALLATION
+------------
+Internet access is required only while setup downloads hash-verified packages
+from PyPI. Normal app use does not require internet access.
+
+macOS:
+  1. Install Python 3.14 from https://www.python.org/downloads/ if needed.
+  2. Open the Card cutter folder.
+  3. Right-click setup_macos.command, choose Open, and approve it once if macOS
+     asks. This creates .venv and installs requirements.lock.
+  4. Double-click run_macos.command whenever you want to use the app.
+
+Windows:
+  1. Install 64-bit Python 3.14 from
+     https://www.python.org/downloads/windows/ and include the Python Launcher.
+  2. Ensure the current Microsoft Visual C++ x64 Redistributable is installed.
+     Official download information:
+     https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist
+  3. In PowerShell, change to the Card cutter folder and run:
+       Set-ExecutionPolicy -Scope Process Bypass
+       .\setup_windows.ps1
+  4. Start the app with:
+       .\run_windows.ps1
+
+Windows EXE through GitHub:
+  1. Push this project to a private or public GitHub repository.
+  2. Open the repository's Actions page.
+  3. Select "Build Windows EXE" and choose "Run workflow."
+  4. When it finishes, open that workflow run and download the
+     CardCutter-Windows-x64 artifact.
+  5. Unzip the complete CardCutter folder and run CardCutter.exe inside it.
+     Keep the folder together; this safer first release uses PyInstaller's
+     one-folder format rather than extracting a large executable on every run.
+
+The GitHub artifact is not digitally code-signed. Windows SmartScreen may show
+an unknown-publisher warning even when the build completed successfully. Code
+signing requires a separately obtained trusted signing certificate and is not
+part of this first release.
+
+On a Windows development computer, .\build_windows.ps1 produces the same
+dist\CardCutter\CardCutter.exe. PyInstaller must run on Windows to produce a
+Windows executable; the macOS copy cannot cross-compile it.
+
+Setup refuses unsupported CPU/Python combinations, checks that its folder is
+writable, installs into .venv only, and never changes the system Python.
+
+
+WHICH REQUIREMENTS FILE IS WHICH?
+---------------------------------
+  * requirements.txt is the familiar, human-readable complete runtime list. It
+    is convenient to inspect and can be installed with pip, but has no hashes.
+  * requirements.in contains only the seven runtime packages Card Cutter chose
+    directly. pip-tools uses it as the small source file for dependency updates.
+  * requirements.lock contains the full resolved runtime dependency tree with
+    exact versions and accepted SHA-256 download hashes. Normal setup uses this.
+  * requirements-dev.in adds test, lint, type-check, lock-generation, and audit
+    tools to the runtime input. They are not needed to run Card Cutter.
+  * requirements-dev.lock is the fully resolved, hash-verified developer setup.
+
+Runtime means software imported or otherwise needed while the app is running.
+Developer-only means maintenance tools used to test or inspect the project. A
+developer environment includes the runtime packages too, because tests must run
+the real app. Use the platform setup script without --dev/-Dev for normal use.
+
+
+USING SELECTED IMAGES
+---------------------
+  1. Open the Selected Images tab and click Add images.
+  2. Select one or several JPG, JPEG, PNG, or HEIC files.
+  3. Choose an output folder.
+  4. Set Outside margin. The slider covers 0-250 pixels; the number field
+     accepts 0-2000 pixels and has visible -/+ step buttons. Zero ends at the
+     detected outside edge. Larger values keep that many source-image pixels
+     outside the edge where possible.
+  5. Leave Straighten perspective enabled to correct a tilted photograph, or
+     disable it for an ordinary image-aligned rectangle crop.
+  6. Leave Auto-rotate using text enabled to test 0, 90, 180, and 270 degrees,
+     or disable it to retain the photographed orientation.
+  7. Click Process selected images. The Before and After panels show progress.
+
+The sun/moon button at the top right switches between light and dark mode. The
+choice is saved for the next launch and does not affect exported images.
+
+Pokemon card backs intentionally contain opposing wordmarks, so OCR can see
+readable text in both 180-degree orientations. Card Cutter handles this special
+case locally: OCR must first identify "Pokemon," the characteristic blue/yellow
+back palette must be present, and then the central Pokeball is oriented with its
+red half on top. If those signals are weak, the normal OCR confidence safeguard
+remains in control instead of forcing a Pokemon-specific guess.
+
+
+USING A BATCH FOLDER
+--------------------
+  1. Open Batch Folder and choose the input folder.
+  2. Choose a new output folder outside the input folder.
+  3. Choose the margin and toggles, then click Process folder recursively.
+
+Images are processed in natural relative-path order, including subfolders. The
+same relative folder structure is recreated in the output. Existing files are
+never overwritten; a deterministic _cropped_2, _cropped_3, etc. suffix is used.
+
+Cancel stops before the next image. It does not interrupt an image that is
+currently being safely written.
+
+
+OUTPUTS AND REVIEW ITEMS
+------------------------
+Every run creates processing_report.csv. It records the input, output, status,
+crop confidence, clockwise rotation, rotation confidence, and message in the
+same order as the run.
+
+Card Cutter does not guess below its confidence thresholds. If it cannot find a
+safe crop, or text orientation scores are too close, the unmodified original is
+copied into needs_review and the reason is recorded in the report. Turn off the
+uncertain optional feature and run that item again if its current orientation or
+perspective is already acceptable.
+
+Exports keep the usable color profile where possible, bake in EXIF orientation,
+and intentionally omit EXIF/GPS metadata for privacy. Source files remain
+byte-for-byte unchanged.
+
+
+TROUBLESHOOTING
+---------------
+  * "Needs review": use a more contrasting background, include the whole outer
+    edge, reduce glare, or disable Auto-rotate/Straighten for that image.
+  * Setup cannot find Python: install exactly Python 3.14 for the supported CPU.
+  * Windows Visual C++ error: install Microsoft's current supported x64 runtime
+    from the official link above, then rerun setup.
+  * HEIC will not open: rerun setup so pillow-heif is restored from the lock.
+  * Do not copy .venv between Mac and Windows. Run the platform setup script.
+  * To reset settings, use your OS application-settings tools for the
+    "Local Card Tools / Card Cutter" application. This does not touch images.
+
+
+PACKAGE SAFETY AND PRIVACY
+--------------------------
+The versions below are mirrored in requirements.txt and pinned with hashes in
+requirements.lock and requirements-dev.lock. On 2026-10-18,
+pip-audit 2.10.1 reported no known vulnerabilities in either complete lock.
+This means no matched published advisory was found on that date; it is not a
+guarantee that any software is risk-free.
+
+No package can honestly be described as 100% safe. Hash locks verify that the
+downloaded files match the reviewed package releases, and pip-audit checks known
+published advisories; neither can prove the absence of undiscovered bugs,
+malicious upstream changes in a future version, or flaws in native decoders.
+The Windows build-only lock was separately audited on 2026-10-18 and pip-audit
+reported no known vulnerabilities.
+
+Why Requests and certifi are present even though Card Cutter is offline:
+RapidOCR declares Requests as a required dependency and imports its downloader
+when resolving OCR models. During engine startup that downloader first checks
+whether the packaged model exists and matches its expected SHA-256 value. In
+this application it finds the local model and returns before making an HTTP
+request. Requests still has to be importable, and Requests declares certifi,
+urllib3, idna, and charset-normalizer as dependencies. Certifi is a static set
+of trusted certificate-authority certificates used to verify HTTPS identities;
+it contains no downloader and opens no connection itself. Removing these files
+manually would create an unsupported partial RapidOCR installation even though
+the normal Card Cutter path does not use the network code.
+
+Safety codes used below:
+  PURE  = Python/data only; no native machine-code extension.
+  NATIVE = compiled code; image limits, file validation, and tests reduce risk,
+           but malformed-file bugs are possible in any native decoder/runtime.
+  MODEL = bundled local model data is loaded for inference.
+  NET-I = network is expected only during package installation/auditing.
+  NET-0 = the app does not call this package's network functions at runtime.
+
+Runtime packages (installed by normal setup)
+--------------------------------------------
+certifi 2026.7.22 | CA certificate bundle | MPL-2.0 | PURE; NET-0; supplies
+  trust roots to Requests but opens no connection itself | https://pypi.org/project/certifi/
+charset-normalizer 3.5.2 | HTTP text decoding dependency | MIT | NATIVE wheels;
+  NET-0; only present through Requests | https://pypi.org/project/charset-normalizer/
+colorlog 6.12.0 | readable OCR logging | MIT | PURE; local console output only |
+  https://pypi.org/project/colorlog/
+flatbuffers 25.12.19 | ONNX model serialization | Apache-2.0 | PURE; reads local
+  model structures | https://pypi.org/project/flatbuffers/
+idna 3.20 | domain-name handling for Requests | BSD-3-Clause | PURE; NET-0 |
+  https://pypi.org/project/idna/
+numpy 2.5.4 | image arrays and geometry | BSD-3-Clause plus bundled component
+  licenses | NATIVE; processes local in-memory pixels |
+  https://pypi.org/project/numpy/
+omegaconf 2.4.0 | RapidOCR configuration | license not declared in wheel metadata;
+  see project license | PURE; reads packaged/local configuration |
+  https://pypi.org/project/omegaconf/
+onnxruntime 1.31.0 | CPU inference for OCR | MIT | NATIVE; loads local ONNX
+  models. ORT_DISABLE_TELEMETRY=1 is set before initialization and the Python
+  telemetry API is also disabled | https://pypi.org/project/onnxruntime/
+opencv-python-headless 5.0.0.93 | edge detection, contours, transforms | Apache-2.0
+  | NATIVE; no GUI/network component; validates bounded local images |
+  https://pypi.org/project/opencv-python-headless/
+packaging 26.3 | version/metadata helpers | Apache-2.0 OR BSD-2-Clause | PURE;
+  local metadata only | https://pypi.org/project/packaging/
+pillow 13.0.0 | JPG/PNG decoding and encoding | MIT-CMU | NATIVE; guarded by
+  file-size, pixel-count, and decompression-bomb limits |
+  https://pypi.org/project/pillow/
+pillow-heif 1.8.1 | HEIC decoder | BSD-3-Clause | NATIVE; only local HEIC files,
+  under the same validation limits | https://pypi.org/project/pillow-heif/
+protobuf 7.36.2 | ONNX data structures | BSD-3-Clause | NATIVE wheel; local model
+  metadata only | https://pypi.org/project/protobuf/
+pyclipper 1.4.0 | OCR polygon geometry | MIT | NATIVE; local coordinate data |
+  https://pypi.org/project/pyclipper/
+PySide6_Essentials 6.12.0 | Qt desktop interface | LGPL-3.0-only OR GPL-2.0-only
+  OR GPL-3.0-only | NATIVE; local file dialogs/UI, no WebEngine package installed |
+  https://pypi.org/project/PySide6-Essentials/
+PyYAML 6.0.3 | RapidOCR configuration parser | MIT | NATIVE accelerator; only
+  packaged trusted configuration is used | https://pypi.org/project/PyYAML/
+rapidocr 3.10.0 | OCR pipeline and bundled PP-OCR model files | Apache-2.0 |
+  PURE+MODEL; the app passes arrays and packaged model paths, never URLs; NET-0 |
+  https://pypi.org/project/rapidocr/
+requests 2.34.2 | RapidOCR transitive download client | Apache-2.0 | PURE; NET-0
+  during app use because models are packaged; setup/auditing uses other clients |
+  https://pypi.org/project/requests/
+shapely 2.2.0 | OCR geometry | BSD-3-Clause | NATIVE GEOS component; local OCR
+  polygons only | https://pypi.org/project/shapely/
+shiboken6 6.12.0 | Python-to-Qt binding runtime | LGPL-3.0-only OR GPL-2.0-only OR
+  GPL-3.0-only | NATIVE; required by the local UI |
+  https://pypi.org/project/shiboken6/
+six 1.17.0 | compatibility helpers | MIT | PURE; local only |
+  https://pypi.org/project/six/
+tqdm 4.70.1 | RapidOCR progress utility | MPL-2.0 AND MIT | PURE; local output |
+  https://pypi.org/project/tqdm/
+urllib3 2.8.0 | HTTP transport under Requests | MIT | PURE; NET-0 at runtime |
+  https://pypi.org/project/urllib3/
+
+Developer/audit packages (added only by setup --dev or -Dev)
+-----------------------------------------------------------
+ast_serialize 0.13.1 | mypy AST support | MIT | NATIVE; source analysis only |
+  https://pypi.org/project/ast-serialize/
+boolean.py 5.0 | license-expression parser | BSD-2-Clause | PURE; audit metadata |
+  https://pypi.org/project/boolean.py/
+build 1.6.1 | Python build frontend | MIT | PURE; local build metadata; NET-I |
+  https://pypi.org/project/build/
+CacheControl 0.14.4 | audit HTTP cache | Apache-2.0 | PURE; audit cache only; NET-I |
+  https://pypi.org/project/CacheControl/
+click 8.5.0 | command-line helpers | BSD-3-Clause | PURE; local developer commands |
+  https://pypi.org/project/click/
+colorama 0.4.6 | Windows terminal colors | license not declared in wheel metadata;
+  see project license | PURE; local console only | https://pypi.org/project/colorama/
+coverage 7.16.2 | test coverage measurement | Apache-2.0 | NATIVE; observes test
+  execution and writes local reports | https://pypi.org/project/coverage/
+cyclonedx-python-lib 11.12.0 | audit dependency format | Apache-2.0 | PURE; local
+  package metadata | https://pypi.org/project/cyclonedx-python-lib/
+defusedxml 0.7.1 | safe XML parsing for audit metadata | PSFL | PURE; specifically
+  limits unsafe XML features | https://pypi.org/project/defusedxml/
+filelock 4.2.1 | audit cache locking | MIT | PURE; creates local lock files |
+  https://pypi.org/project/filelock/
+iniconfig 2.3.1 | pytest configuration | MIT | PURE; local test configuration |
+  https://pypi.org/project/iniconfig/
+librt 0.16.0 | mypy compiled runtime | MIT | NATIVE; source analysis only |
+  https://pypi.org/project/librt/
+license-expression 30.4.4 | audit license parsing | Apache-2.0 | PURE; metadata only |
+  https://pypi.org/project/license-expression/
+markdown-it-py 4.2.0 | rich text rendering for audit output | license not declared
+  in wheel metadata; see project license | PURE; local console output |
+  https://pypi.org/project/markdown-it-py/
+mdurl 0.1.2 | Markdown URL helper | license not declared in wheel metadata; see
+  project license | PURE; local formatting | https://pypi.org/project/mdurl/
+msgpack 1.2.3 | audit cache serialization | Apache-2.0 | NATIVE; local cache data |
+  https://pypi.org/project/msgpack/
+mypy 2.4.0 | static type checking | MIT | NATIVE compiled distribution; reads
+  project source and writes a local cache | https://pypi.org/project/mypy/
+mypy_extensions 1.1.0 | mypy typing helpers | MIT | PURE; source analysis only |
+  https://pypi.org/project/mypy-extensions/
+packageurl-python 0.17.6 | audit package identifiers | MIT | PURE; metadata only |
+  https://pypi.org/project/packageurl-python/
+pathspec 1.1.1 | mypy file matching | license not declared in wheel metadata; see
+  project license | PURE; local paths only | https://pypi.org/project/pathspec/
+pip_api 0.0.35 | exposes pip metadata to auditor | Apache-2.0 | PURE; reads the
+  local environment | https://pypi.org/project/pip-api/
+pip_audit 2.10.1 | known-vulnerability audit | license not declared in wheel
+  metadata; see PyPA project license | PURE; sends package names/versions, never
+  user images, to advisory services when manually run; NET-I |
+  https://pypi.org/project/pip-audit/
+pip-requirements-parser 32.0.1 | lock parsing for audit | MIT | PURE; local files |
+  https://pypi.org/project/pip-requirements-parser/
+pip-tools 7.6.2 | dependency lock generation | BSD-3-Clause | PURE; contacts PyPI
+  only during maintainer updates; NET-I | https://pypi.org/project/pip-tools/
+platformdirs 4.13.3 | portable audit cache paths | MIT | PURE; local directories |
+  https://pypi.org/project/platformdirs/
+pluggy 1.7.0 | pytest plugin system | MIT | PURE; loads installed test plugins |
+  https://pypi.org/project/pluggy/
+py-serializable 2.1.0 | CycloneDX serialization | Apache-2.0 | PURE; audit data |
+  https://pypi.org/project/py-serializable/
+Pygments 2.21.0 | developer output highlighting | BSD-2-Clause | PURE; local text |
+  https://pypi.org/project/Pygments/
+pyparsing 3.3.3 | requirement parsing | MIT | PURE; local lock files |
+  https://pypi.org/project/pyparsing/
+pyproject_hooks 1.3.3 | build frontend hooks | MIT | PURE; executes explicitly
+  configured local build backends | https://pypi.org/project/pyproject-hooks/
+pytest 9.1.1 | test runner | MIT | PURE; runs this repository's tests only |
+  https://pypi.org/project/pytest/
+pytest-cov 7.1.0 | pytest coverage integration | MIT | PURE; local test reporting |
+  https://pypi.org/project/pytest-cov/
+pytest-qt 4.5.0 | Qt UI testing | MIT | PURE; drives the local test UI |
+  https://pypi.org/project/pytest-qt/
+rich 15.0.0 | audit console formatting | MIT | PURE; local console output |
+  https://pypi.org/project/rich/
+ruff 0.17.1 | linting | MIT | NATIVE executable; reads project text and writes
+  nothing when run as documented | https://pypi.org/project/ruff/
+sortedcontainers 2.4.0 | CycloneDX ordered collections | Apache-2.0 | PURE;
+  in-memory audit data | https://pypi.org/project/sortedcontainers/
+tomli 2.5.0 | TOML reader for audit tools | MIT | PURE; local configuration |
+  https://pypi.org/project/tomli/
+tomli_w 1.2.0 | TOML writer for audit tools | license not declared in wheel
+  metadata; see project license | PURE; local audit output |
+  https://pypi.org/project/tomli-w/
+typing_extensions 4.16.0 | backported typing features | PSF-2.0 | PURE; runtime
+  declarations only | https://pypi.org/project/typing-extensions/
+wheel 0.48.0 | Python wheel build helper | MIT | PURE; local package building |
+  https://pypi.org/project/wheel/
+
+Environment bootstrap packages
+------------------------------
+pip 26.0.1 | installs hash-locked packages | MIT | PURE; writes only inside .venv;
+  contacts PyPI during setup; NET-I | https://pypi.org/project/pip/
+setuptools 84.0.0 | project/build metadata support | MIT | PURE; used only for
+  developer/build operations inside .venv | https://pypi.org/project/setuptools/
+
+Windows EXE build-only packages
+-------------------------------
+These are installed only while producing CardCutter.exe and are not required by
+the source-based app or imported during card processing.
+
+altgraph 0.17.5 | dependency graph used by PyInstaller | MIT | PURE; analyzes
+  local imports | https://pypi.org/project/altgraph/
+pefile 2024.8.26 | reads/writes Windows PE executable metadata | MIT | PURE;
+  operates only on local build output | https://pypi.org/project/pefile/
+pyinstaller 6.22.3 | creates the Windows application bundle | GPL-2.0-or-later
+  with PyInstaller's distribution exception | NATIVE bootloader; bundles local
+  source/runtime files | https://pypi.org/project/pyinstaller/
+pyinstaller-hooks-contrib 2026.8 | package-specific collection rules | license
+  not declared in wheel metadata; see project license | PURE; build analysis |
+  https://pypi.org/project/pyinstaller-hooks-contrib/
+pywin32-ctypes 0.2.3 | Windows API bridge used by PyInstaller | BSD-3-Clause |
+  PURE; local executable/resource operations |
+  https://pypi.org/project/pywin32-ctypes/
+
+
+SOURCE REFERENCES
+-----------------
+RapidOCR installation/models: https://rapidai.github.io/RapidOCRDocs/main/en/install_usage/rapidocr/install/
+ONNX Runtime installation: https://onnxruntime.ai/docs/install/
+ONNX Runtime privacy controls: https://github.com/microsoft/onnxruntime/blob/main/docs/Privacy.md
+Qt for Python: https://doc.qt.io/qtforpython-6/gettingstarted.html
+OpenCV Python: https://pypi.org/project/opencv-python-headless/
+Pillow HEIF: https://pypi.org/project/pillow-heif/
+

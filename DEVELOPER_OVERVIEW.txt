@@ -1,0 +1,221 @@
+CARD CUTTER 1.0 DEVELOPER OVERVIEW
+==================================
+
+PURPOSE AND SUPPORTED TARGETS
+-----------------------------
+Card Cutter is a local PySide6 desktop application for one-card/one-slab photos.
+The supported targets are Python 3.14 on Apple Silicon macOS 14+ and Windows
+10/11 x64. There is no platform-specific OCR path: both targets use RapidOCR
+with ONNX Runtime CPU inference and packaged local models.
+
+
+PROJECT STRUCTURE
+-----------------
+pyproject.toml                    Build, lint, type, and test configuration
+requirements.in                  Direct runtime pins
+requirements.txt                 Human-readable complete runtime environment
+requirements.lock                Complete runtime pins plus PyPI SHA-256 hashes
+requirements-dev.in              Runtime plus developer-tool pins
+requirements-dev.lock            Complete dev pins plus PyPI SHA-256 hashes
+requirements-build-windows.lock  Hash-pinned Windows PyInstaller toolchain
+setup_macos.command/.ps1          Platform validation and .venv setup
+run_macos.command/.ps1            Platform launchers and privacy environment
+build_windows.ps1                Windows one-folder EXE builder
+src/card_cutter/config.py         Limits, defaults, thresholds, supported types
+src/card_cutter/models.py         ProcessingOptions/Result and status models
+src/card_cutter/io.py             Validation, HEIC, metadata, atomic file writes
+src/card_cutter/processing/       Detection, geometry, crop, OCR orientation
+src/card_cutter/processor.py      UI-independent single-image public interface
+src/card_cutter/services.py       Selected-file/batch orchestration and reports
+src/card_cutter/ui/main_window.py Qt interface, preview, worker-thread lifecycle
+tests/                            Unit, integration, and offscreen Qt tests
+scripts/add_lock_hashes.py        Maintainer lock-hash completion tool
+.github/workflows/test.yml        Apple Silicon macOS/Windows x64 test matrix
+.github/workflows/build-windows-exe.yml  Manual downloadable Windows build
+
+
+PUBLIC PROCESSING INTERFACE
+---------------------------
+Import from card_cutter:
+
+  ProcessingOptions(margin_px=20, straighten=True, auto_rotate=True)
+  process_image(input_path, output_path, options) -> ProcessResult
+
+ProcessResult contains input/output paths, ProcessingStatus, crop confidence,
+clockwise rotation, rotation confidence, and a human-readable message. A
+NEEDS_REVIEW result deliberately writes no transformed output; services.py
+copies the original unchanged into needs_review. This separation keeps the core
+testable without Qt and prevents unsafe best guesses.
+
+
+DATA FLOW
+---------
+  1. io.load_image validates extension, symlink status, file size, decoder,
+     dimensions, and a 100-million-pixel limit. Pillow normalizes EXIF
+     orientation and converts to RGB. ICC data is retained separately.
+  2. detection.detect_card scales only the analysis copy to at most 1400 px.
+     It builds Canny, adaptive-threshold, inverse-threshold, and border-color
+     masks. Contours and minimum-area rectangles provide candidate quads; Hough
+     lines contribute line evidence.
+  3. Candidates are scored by rectangularity, boundary edge support, area,
+     card/slab aspect plausibility, centering, and Hough evidence. Below 0.65 is
+     NEEDS_REVIEW. Candidates pinned to two or more photo boundaries receive a
+     strong penalty: repeated acceptance testing showed that otherwise the
+     image frame could beat the real card/slab contour. Coordinates are mapped
+     back to the full-resolution source. A low-aspect, medium-area candidate is
+     also checked for a truncated long end; this repairs the common transparent
+     slab case where the inner compartment hides the grading-label end. The
+     repair is bounded by available image space and the physical slab ratio.
+  4. geometry.crop_image either expands an axis-aligned bounding rectangle or
+     expands the detected quadrilateral and applies a four-point homography.
+     Margins use source-image pixels and clamp at image boundaries.
+  5. If enabled, orientation.choose_text_orientation evaluates 0/90/180/270.
+     RapidOCR line classification is disabled so global orientation remains
+     measurable. The score combines recognized alphanumeric length, OCR
+     confidence, and horizontal text-box aspect. The winner must be at least
+     1.15 times the runner-up; otherwise the original needs review.
+     A narrow Pokemon-back rule resolves that design's opposing wordmarks only
+     when OCR finds "Pokemon," blue/yellow palette thresholds pass, and the
+     center red half is at least 1.5 times stronger above than below. Otherwise
+     it does not override the general OCR result.
+  6. io.save_image_atomic writes a temporary sibling, retains ICC where
+     possible, omits EXIF/GPS, then atomically replaces the final destination.
+  7. services.py maintains natural order, recursive relative paths, collision
+     suffixes, cancellation boundaries, needs_review originals, and an atomic
+     processing_report.csv.
+
+
+THREADING AND UI
+----------------
+The UI owns a QThread and moves ProcessingWorker into it. All decoding, OpenCV,
+and OCR work occurs off the GUI thread. Progress and results return through Qt
+signals. Cancellation uses threading.Event and is observed between files;
+individual atomic writes are allowed to finish. Do not update widgets directly
+from worker code.
+
+The window deliberately assigns foreground and background colors for all main
+controls. The user can switch the explicit light/dark theme from the header and
+the choice is persisted with QSettings. macOS can supply a dark system palette
+even when the application uses light panel backgrounds; relying on inherited
+palette text in that combination made option, tab, field, and status labels
+white-on-white. Keep explicit color pairs in both _apply_theme branches when
+adding widgets, and visually check both modes on macOS and Windows.
+
+
+SAFETY AND PRIVACY INVARIANTS
+-----------------------------
+  * Never write to or delete a source path.
+  * Reject symlinks as image inputs and reject recursive output inside input.
+  * Validate size/pixels before costly processing.
+  * Do not weaken low-confidence handling without adding acceptance fixtures.
+  * Keep atomic sibling writes and deterministic non-overwrite naming.
+  * Set ORT_DISABLE_TELEMETRY=1 before importing ONNX Runtime and also call
+    disable_telemetry_events().
+  * Pass RapidOCR arrays and packaged model paths only; never pass URLs.
+  * Keep WebEngine and GPU runtimes out of dependencies unless explicitly
+    justified and reviewed.
+  * Treat image bytes, OCR strings, paths, reports, and logs as private data.
+
+
+DEPENDENCY UPDATE PROCEDURE
+---------------------------
+Use the project's virtual environment; never install into system Python.
+
+  macOS:  ./setup_macos.command --dev
+  Windows: .\setup_windows.ps1 -Dev
+
+To update intentionally:
+  1. Edit exact direct versions in requirements.in and requirements-dev.in.
+  2. In .venv run pip-compile --strip-extras for both lock files.
+  3. Run:
+       python scripts/add_lock_hashes.py requirements.lock requirements-dev.lock
+     This retrieves SHA-256 values from PyPI's JSON API and writes atomically.
+  4. Recreate a clean .venv and install with --require-hashes.
+  5. Run pip-audit against both locks. Resolve any finding or document why the
+     affected code is unreachable before release.
+  6. Update USER_GUIDE.txt's exact inventory, license/source fields, audit date,
+     native/model status, network behavior, and risk notes.
+  7. Run the complete quality and acceptance commands below on both targets.
+
+Do not hand-edit hashes. A hash confirms downloaded bytes, not package safety.
+
+
+QUALITY AND TEST COMMANDS
+-------------------------
+From the project root after developer setup:
+
+  macOS:
+    .venv/bin/ruff check .
+    .venv/bin/mypy
+    QT_QPA_PLATFORM=offscreen .venv/bin/pytest
+    .venv/bin/pip-audit -r requirements.lock --disable-pip
+    .venv/bin/pip-audit -r requirements-dev.lock --disable-pip
+
+  Windows PowerShell:
+    .\.venv\Scripts\ruff.exe check .
+    .\.venv\Scripts\mypy.exe
+    $env:QT_QPA_PLATFORM="offscreen"
+    .\.venv\Scripts\pytest.exe
+    .\.venv\Scripts\pip-audit.exe -r requirements.lock --disable-pip
+    .\.venv\Scripts\pip-audit.exe -r requirements-dev.lock --disable-pip
+
+The GitHub Actions workflow repeats lint, type checks, and tests on macOS ARM64
+and Windows x64 after the repository is pushed to a remote.
+
+The manual Build Windows EXE workflow installs the hash-locked runtime and
+Windows build toolchain, audits the resolved environment, invokes
+build_windows.ps1, verifies CardCutter.exe exists, and uploads the complete
+one-folder bundle. Do not distribute only the .exe from inside that folder; its
+adjacent libraries and OCR model files are required. PyInstaller is not a
+cross-compiler, so Windows artifacts must be built on a Windows runner.
+
+On 2026-10-17, pip's cross-platform resolver also confirmed that all 23 locked
+runtime packages have installable Windows x64 Python 3.14 wheels. This is a
+packaging preflight, not a substitute for running the workflow on Windows.
+
+
+TEST COVERAGE AND ACCEPTANCE
+----------------------------
+Tests generate synthetic images; personal photographs are not committed. They
+cover portrait/landscape/tilted detection, perspective and rectangular crops,
+camera-frame rejection, margin clamping, four rotations, uncertain ties,
+extensionless supported images, recursive natural ordering,
+atomic outputs, corrupt files, collision naming, unchanged source bytes,
+needs_review copies, and Qt control defaults/synchronization.
+
+Before release, run the user's nine reference images locally with both optional
+toggles and visually inspect representative portrait, landscape, dark-on-dark,
+and 90-degree inputs. Current acceptance on 2026-10-17 found every reference at
+crop confidence 0.793-0.987 and correctly resolved every supplied orientation.
+Do not add those personal source files to Git.
+
+
+EXTENSION POINTS AND LIMITS
+---------------------------
+  * Add formats in config.SUPPORTED_EXTENSIONS, io.load_image, output mapping,
+    tests, and both UI file filters together.
+  * New detectors should return a four-point full-resolution quad and confidence
+    through DetectionResult; keep downstream geometry independent.
+  * OCR alternatives implement the OCRScorer protocol or replace the lazy engine
+    behind rapidocr_score. Both OS targets must use equivalent behavior.
+  * Pokemon card backs are nearly 180-degree symmetric: one wordmark is upright
+    in either orientation. Keep the existing text, palette, and central-red
+    checks together; loosening one can misclassify colorful card fronts. More
+    back designs should use separate offline recognizers and must fall back to
+    NEEDS_REVIEW when uncertain.
+  * A manual corner editor would belong in UI code and pass a reviewed quad to a
+    new processor entry point; do not mix interaction into detection.py.
+  * Multiple cards per image, Linux, Intel Mac, Windows ARM, signed installers,
+    cloud processing, and in-place modification are intentionally unsupported.
+
+
+SOURCE REFERENCES
+-----------------
+RapidOCR: https://rapidai.github.io/RapidOCRDocs/main/en/install_usage/rapidocr/install/
+ONNX Runtime install: https://onnxruntime.ai/docs/install/
+ONNX Runtime privacy: https://github.com/microsoft/onnxruntime/blob/main/docs/Privacy.md
+Qt for Python: https://doc.qt.io/qtforpython-6/gettingstarted.html
+OpenCV Python: https://pypi.org/project/opencv-python-headless/
+Pillow HEIF: https://pypi.org/project/pillow-heif/
+GitHub runner images: https://github.com/actions/runner-images
+
